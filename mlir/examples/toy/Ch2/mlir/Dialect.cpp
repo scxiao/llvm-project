@@ -69,9 +69,57 @@ static mlir::ParseResult parseBinaryOp(mlir::OpAsmParser &parser,
   return mlir::success();
 }
 
+/// A generalized parser for binary operations. This parses the different forms
+/// of 'printUnaryOp' below.
+static mlir::ParseResult parseUnaryOp(mlir::OpAsmParser &parser,
+                                       mlir::OperationState &result) {
+  SmallVector<mlir::OpAsmParser::UnresolvedOperand, 1> operands;
+  SMLoc operandsLoc = parser.getCurrentLocation();
+  Type type;
+  if (parser.parseOperandList(operands, /*requiredOperandCount=*/1) ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType(type))
+    return mlir::failure();
+
+  // If the type is a function type, it contains the input and result types of
+  // this operation.
+  if (FunctionType funcType = type.dyn_cast<FunctionType>()) {
+    if (parser.resolveOperands(operands, funcType.getInputs(), operandsLoc,
+                               result.operands))
+      return mlir::failure();
+    result.addTypes(funcType.getResults());
+    return mlir::success();
+  }
+
+  // Otherwise, the parsed type is the type of both operands and results.
+  if (parser.resolveOperands(operands, type, result.operands))
+    return mlir::failure();
+  result.addTypes(type);
+  return mlir::success();
+}
+
 /// A generalized printer for binary operations. It prints in two different
 /// forms depending on if all of the types match.
 static void printBinaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
+  printer << " " << op->getOperands();
+  printer.printOptionalAttrDict(op->getAttrs());
+  printer << " : ";
+
+  // If all of the types are the same, print the type directly.
+  Type resultType = *op->result_type_begin();
+  if (llvm::all_of(op->getOperandTypes(),
+                   [=](Type type) { return type == resultType; })) {
+    printer << resultType;
+    return;
+  }
+
+  // Otherwise, print a functional type.
+  printer.printFunctionalType(op->getOperandTypes(), op->getResultTypes());
+}
+
+/// A generalized printer for binary operations. It prints in two different
+/// forms depending on if all of the types match.
+static void printUnaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
   printer << " " << op->getOperands();
   printer.printOptionalAttrDict(op->getAttrs());
   printer << " : ";
@@ -240,6 +288,16 @@ mlir::ParseResult MulOp::parse(mlir::OpAsmParser &parser,
 }
 
 void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
+
+//===----------------------------------------------------------------------===//
+// AddOneOp
+//===----------------------------------------------------------------------===//
+mlir::ParseResult AddOneOp::parse(mlir::OpAsmParser &parser,
+                               mlir::OperationState &result) {
+  return parseUnaryOp(parser, result);
+}
+
+void AddOneOp::print(mlir::OpAsmPrinter &p) { printUnaryOp(p, *this); }
 
 //===----------------------------------------------------------------------===//
 // ReturnOp

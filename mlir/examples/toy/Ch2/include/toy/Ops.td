@@ -222,6 +222,26 @@ def MulOp : Toy_Op<"mul"> {
 }
 
 //===----------------------------------------------------------------------===//
+// AddOneOp
+//===----------------------------------------------------------------------===//
+def AddOneOp : Toy_Op<"add_one"> {
+  let summary = "add 1 to each element of the input";
+  let description = [{
+    add 1 to each element of the input tensor
+  }];
+  // The add one function take one input tensor to be added to
+  let arguments = (ins F64Tensor:$input);
+  let results = (outs F64Tensor);
+
+  // Indicates that the operation has a custom parser and printer method
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins "Value":$input)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // PrintOp
 //===----------------------------------------------------------------------===//
 
