@@ -41,9 +41,9 @@ public:
     Expr_Literal,
     Expr_Var,
     Expr_BinOp,
-    Expr_UnaryOp,
     Expr_Call,
     Expr_Print,
+    Expr_AddOne,
   };
 
   ExprAST(ExprASTKind kind, Location location)
@@ -165,22 +165,6 @@ public:
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_BinOp; }
 };
 
-/// Expression class for a unary operator.
-class UnaryExprAST : public ExprAST {
-  char op;
-  std::unique_ptr<ExprAST> input;
-
-public:
-  char getOp() { return op; }
-  ExprAST *getInput() { return input.get(); }
-
-  UnaryExprAST(Location loc, char op, std::unique_ptr<ExprAST> in)
-      : ExprAST(Expr_UnaryOp, std::move(loc)), op(op), input(std::move(in)) {}
-
-  /// LLVM style RTTI
-  static bool classof(const ExprAST *c) { return c->getKind() == Expr_UnaryOp; }
-};
-
 /// Expression class for function calls.
 class CallExprAST : public ExprAST {
   std::string callee;
@@ -211,6 +195,20 @@ public:
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_Print; }
+};
+
+/// Expression class for builtin add_one calls.
+class AddOneExprAST : public ExprAST {
+  std::unique_ptr<ExprAST> arg;
+
+public:
+  AddOneExprAST(Location loc, std::unique_ptr<ExprAST> arg)
+      : ExprAST(Expr_AddOne, std::move(loc)), arg(std::move(arg)) {}
+
+  ExprAST *getArg() { return arg.get(); }
+
+  /// LLVM style RTTI
+  static bool classof(const ExprAST *c) { return c->getKind() == Expr_AddOne; }
 };
 
 /// This class represents the "prototype" for a function, which captures its

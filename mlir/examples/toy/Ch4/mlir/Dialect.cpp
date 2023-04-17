@@ -414,6 +414,12 @@ void MulOp::inferShapes() { getResult().setType(getLhs().getType()); }
 //===----------------------------------------------------------------------===//
 // AddOneOp
 //===----------------------------------------------------------------------===//
+void AddOneOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                  mlir::Value input) {
+  state.addTypes(UnrankedTensorType::get(builder.getF64Type()));
+  state.addOperands({input});
+}
+
 mlir::ParseResult AddOneOp::parse(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
   return parseUnaryOp(parser, result);

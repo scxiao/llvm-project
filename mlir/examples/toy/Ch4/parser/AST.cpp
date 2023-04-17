@@ -44,9 +44,9 @@ private:
   void dump(VariableExprAST *node);
   void dump(ReturnExprAST *node);
   void dump(BinaryExprAST *node);
-  void dump(UnaryExprAST *node);
   void dump(CallExprAST *node);
   void dump(PrintExprAST *node);
+  void dump(AddOneExprAST *node);
   void dump(PrototypeAST *node);
   void dump(FunctionAST *node);
 
@@ -78,8 +78,8 @@ static std::string loc(T *node) {
 /// Dispatch to a generic expressions to the appropriate subclass using RTTI
 void ASTDumper::dump(ExprAST *expr) {
   llvm::TypeSwitch<ExprAST *>(expr)
-      .Case<BinaryExprAST, UnaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST,
-            PrintExprAST, ReturnExprAST, VarDeclExprAST, VariableExprAST>(
+      .Case<BinaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST,
+            PrintExprAST, ReturnExprAST, VarDeclExprAST, VariableExprAST, AddOneExprAST>(
           [&](auto *node) { this->dump(node); })
       .Default([&](ExprAST *) {
         // No match, fallback to a generic message
@@ -172,13 +172,6 @@ void ASTDumper::dump(BinaryExprAST *node) {
   dump(node->getRHS());
 }
 
-/// Print a binary operation, first the operator, then recurse into LHS and RHS.
-void ASTDumper::dump(UnaryExprAST *node) {
-  INDENT();
-  llvm::errs() << "UnaryOp: " << node->getOp() << " " << loc(node) << "\n";
-  dump(node->getInput());
-}
-
 /// Print a call expression, first the callee name and the list of args by
 /// recursing into each individual argument.
 void ASTDumper::dump(CallExprAST *node) {
@@ -194,6 +187,15 @@ void ASTDumper::dump(CallExprAST *node) {
 void ASTDumper::dump(PrintExprAST *node) {
   INDENT();
   llvm::errs() << "Print [ " << loc(node) << "\n";
+  dump(node->getArg());
+  indent();
+  llvm::errs() << "]\n";
+}
+
+/// Print a builtin add_one call, first the builtin name and then the argument.
+void ASTDumper::dump(AddOneExprAST *node) {
+  INDENT();
+  llvm::errs() << "AddOne [ " << loc(node) << "\n";
   dump(node->getArg());
   indent();
   llvm::errs() << "]\n";

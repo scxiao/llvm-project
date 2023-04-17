@@ -11,6 +11,8 @@ def main() {
   var c = multiply_transpose(a, b);
   var d = multiply_transpose(b, a);
   print(d);
+  var f = add_one(d);
+  print(f);
 }
 
 # CHECK-LABEL: toy.func private @multiply_transpose(
@@ -28,4 +30,6 @@ def main() {
 # CHECK-NEXT:    [[VAL_9:%.*]] = toy.generic_call @multiply_transpose([[VAL_6]], [[VAL_8]]) : (tensor<2x3xf64>, tensor<2x3xf64>) -> tensor<*xf64>
 # CHECK-NEXT:    [[VAL_10:%.*]] = toy.generic_call @multiply_transpose([[VAL_8]], [[VAL_6]]) : (tensor<2x3xf64>, tensor<2x3xf64>) -> tensor<*xf64>
 # CHECK-NEXT:    toy.print [[VAL_10]] : tensor<*xf64>
+# CHECK-NEXT:    [[VAL_11:%.*]] = toy.add_one [[VAL_10]] : tensor<*xf64>
+# CHECK-NEXT:    toy.print [[VAL_11]] : tensor<*xf64>
 # CHECK-NEXT:    toy.return

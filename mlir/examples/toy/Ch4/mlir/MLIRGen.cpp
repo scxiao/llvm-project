@@ -199,8 +199,6 @@ private:
       return builder.create<AddOp>(location, lhs, rhs);
     case '*':
       return builder.create<MulOp>(location, lhs, rhs);
-    case '^':
-      return builder.create<AddOneOp>(location, lhs);
     }
 
     emitError(location, "invalid binary operator '") << binop.getOp() << "'";
@@ -330,6 +328,16 @@ private:
     return builder.create<GenericCallOp>(location, callee, operands);
   }
 
+  /// Emit a add_one expression. It emits specific operations for two builtins:
+  /// transpose(x) and print(x).
+  mlir::Value mlirGen(AddOneExprAST &call) {
+    auto arg = mlirGen(*call.getArg());
+    if (!arg)
+      return nullptr;
+
+    return builder.create<AddOneOp>(loc(call.loc()), arg);
+  }
+
   /// Emit a print expression. It emits specific operations for two builtins:
   /// transpose(x) and print(x).
   mlir::LogicalResult mlirGen(PrintExprAST &call) {
@@ -359,6 +367,8 @@ private:
       return mlirGen(cast<CallExprAST>(expr));
     case toy::ExprAST::Expr_Num:
       return mlirGen(cast<NumberExprAST>(expr));
+    case toy::ExprAST::Expr_AddOne:
+      return mlirGen(cast<AddOneExprAST>(expr));
     default:
       emitError(loc(expr.loc()))
           << "MLIR codegen encountered an unhandled expr kind '"
@@ -414,6 +424,11 @@ private:
       if (auto *print = dyn_cast<PrintExprAST>(expr.get())) {
         if (mlir::failed(mlirGen(*print)))
           return mlir::success();
+        continue;
+      }
+      if (auto *addone = dyn_cast<AddOneExprAST>(expr.get())) {
+        if (!mlirGen(*addone))
+          return mlir::failure();
         continue;
       }
 
