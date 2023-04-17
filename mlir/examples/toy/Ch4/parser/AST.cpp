@@ -44,6 +44,7 @@ private:
   void dump(VariableExprAST *node);
   void dump(ReturnExprAST *node);
   void dump(BinaryExprAST *node);
+  void dump(UnaryExprAST *node);
   void dump(CallExprAST *node);
   void dump(PrintExprAST *node);
   void dump(PrototypeAST *node);
@@ -77,7 +78,7 @@ static std::string loc(T *node) {
 /// Dispatch to a generic expressions to the appropriate subclass using RTTI
 void ASTDumper::dump(ExprAST *expr) {
   llvm::TypeSwitch<ExprAST *>(expr)
-      .Case<BinaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST,
+      .Case<BinaryExprAST, UnaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST,
             PrintExprAST, ReturnExprAST, VarDeclExprAST, VariableExprAST>(
           [&](auto *node) { this->dump(node); })
       .Default([&](ExprAST *) {
@@ -169,6 +170,13 @@ void ASTDumper::dump(BinaryExprAST *node) {
   llvm::errs() << "BinOp: " << node->getOp() << " " << loc(node) << "\n";
   dump(node->getLHS());
   dump(node->getRHS());
+}
+
+/// Print a binary operation, first the operator, then recurse into LHS and RHS.
+void ASTDumper::dump(UnaryExprAST *node) {
+  INDENT();
+  llvm::errs() << "UnaryOp: " << node->getOp() << " " << loc(node) << "\n";
+  dump(node->getInput());
 }
 
 /// Print a call expression, first the callee name and the list of args by

@@ -41,6 +41,7 @@ public:
     Expr_Literal,
     Expr_Var,
     Expr_BinOp,
+    Expr_UnaryOp,
     Expr_Call,
     Expr_Print,
   };
@@ -162,6 +163,22 @@ public:
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_BinOp; }
+};
+
+/// Expression class for a unary operator.
+class UnaryExprAST : public ExprAST {
+  char op;
+  std::unique_ptr<ExprAST> input;
+
+public:
+  char getOp() { return op; }
+  ExprAST *getInput() { return input.get(); }
+
+  UnaryExprAST(Location loc, char op, std::unique_ptr<ExprAST> in)
+      : ExprAST(Expr_UnaryOp, std::move(loc)), op(op), input(std::move(in)) {}
+
+  /// LLVM style RTTI
+  static bool classof(const ExprAST *c) { return c->getKind() == Expr_UnaryOp; }
 };
 
 /// Expression class for function calls.
