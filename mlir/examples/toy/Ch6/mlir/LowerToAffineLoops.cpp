@@ -137,13 +137,13 @@ using MulOpLowering = BinaryOpLowering<toy::MulOp, arith::MulFOp>;
 // same shape as the input
 struct AddOneOpLowering : public ConversionPattern {
   AddOneOpLowering(MLIRContext *ctx)
-      : ConversionPattern(toy::AddOneOp::getOperationName(), 1, ctx) { ctx_ = ctx; }
+      : ConversionPattern(toy::AddOneOp::getOperationName(), 1, ctx) { }
 
   LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const final {
     auto loc = op->getLoc();
-    Value const1 = rewriter.create<arith::ConstantFloatOp>(loc, APFloat(1.0), FloatType::getF64(ctx_));
+    Value const1 = rewriter.create<arith::ConstantFloatOp>(loc, APFloat(1.0), FloatType::getF64(rewriter.getContext()));
 
     lowerOpToLoops(op, operands, rewriter,
                    [&, loc](OpBuilder &builder, ValueRange memRefOperands,
@@ -159,9 +159,6 @@ struct AddOneOpLowering : public ConversionPattern {
                    });
     return success();
   }
-
-private:
-  MLIRContext* ctx_;
 };
 
 //===----------------------------------------------------------------------===//
