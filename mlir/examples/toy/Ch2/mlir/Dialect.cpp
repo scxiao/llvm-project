@@ -139,7 +139,7 @@ mlir::LogicalResult ConstantOp::verify() {
 
   // Check that the rank of the attribute type matches the rank of the constant
   // result type.
-  auto attrType = getValue().getType().cast<mlir::RankedTensorType>();
+  auto attrType = getValue().getType().cast<mlir::TensorType>();
   if (attrType.getRank() != resultType.getRank()) {
     return emitOpError("return type must match the one of the attached value "
                        "attribute: ")
