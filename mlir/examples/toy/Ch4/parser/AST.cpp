@@ -46,7 +46,6 @@ private:
   void dump(BinaryExprAST *node);
   void dump(CallExprAST *node);
   void dump(PrintExprAST *node);
-  void dump(AddOneExprAST *node);
   void dump(PrototypeAST *node);
   void dump(FunctionAST *node);
 
@@ -79,7 +78,7 @@ static std::string loc(T *node) {
 void ASTDumper::dump(ExprAST *expr) {
   llvm::TypeSwitch<ExprAST *>(expr)
       .Case<BinaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST,
-            PrintExprAST, ReturnExprAST, VarDeclExprAST, VariableExprAST, AddOneExprAST>(
+            PrintExprAST, ReturnExprAST, VarDeclExprAST, VariableExprAST>(
           [&](auto *node) { this->dump(node); })
       .Default([&](ExprAST *) {
         // No match, fallback to a generic message
@@ -187,15 +186,6 @@ void ASTDumper::dump(CallExprAST *node) {
 void ASTDumper::dump(PrintExprAST *node) {
   INDENT();
   llvm::errs() << "Print [ " << loc(node) << "\n";
-  dump(node->getArg());
-  indent();
-  llvm::errs() << "]\n";
-}
-
-/// Print a builtin add_one call, first the builtin name and then the argument.
-void ASTDumper::dump(AddOneExprAST *node) {
-  INDENT();
-  llvm::errs() << "AddOne [ " << loc(node) << "\n";
   dump(node->getArg());
   indent();
   llvm::errs() << "]\n";
