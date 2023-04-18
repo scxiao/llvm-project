@@ -1107,19 +1107,8 @@ makeTemplateArgumentListInfo(Sema &S, TemplateIdAnnotation &TemplateId) {
   return TemplateArgs;
 }
 
-bool Sema::ActOnTypeConstraint(const CXXScopeSpec &SS,
-                               TemplateIdAnnotation *TypeConstr,
-                               TemplateTypeParmDecl *ConstrainedParameter,
-                               SourceLocation EllipsisLoc) {
-  return BuildTypeConstraint(SS, TypeConstr, ConstrainedParameter, EllipsisLoc,
-                             false);
-}
+bool Sema::CheckTypeConstraint(TemplateIdAnnotation *TypeConstr) {
 
-bool Sema::BuildTypeConstraint(const CXXScopeSpec &SS,
-                               TemplateIdAnnotation *TypeConstr,
-                               TemplateTypeParmDecl *ConstrainedParameter,
-                               SourceLocation EllipsisLoc,
-                               bool AllowUnexpandedPack) {
   TemplateName TN = TypeConstr->Template.get();
   ConceptDecl *CD = cast<ConceptDecl>(TN.getAsTemplateDecl());
 
@@ -1137,9 +1126,32 @@ bool Sema::BuildTypeConstraint(const CXXScopeSpec &SS,
   if (!WereArgsSpecified &&
       CD->getTemplateParameters()->getMinRequiredArguments() > 1) {
     Diag(TypeConstr->TemplateNameLoc,
-         diag::err_type_constraint_missing_arguments) << CD;
+         diag::err_type_constraint_missing_arguments)
+        << CD;
     return true;
   }
+  return false;
+}
+
+bool Sema::ActOnTypeConstraint(const CXXScopeSpec &SS,
+                               TemplateIdAnnotation *TypeConstr,
+                               TemplateTypeParmDecl *ConstrainedParameter,
+                               SourceLocation EllipsisLoc) {
+  return BuildTypeConstraint(SS, TypeConstr, ConstrainedParameter, EllipsisLoc,
+                             false);
+}
+
+bool Sema::BuildTypeConstraint(const CXXScopeSpec &SS,
+                               TemplateIdAnnotation *TypeConstr,
+                               TemplateTypeParmDecl *ConstrainedParameter,
+                               SourceLocation EllipsisLoc,
+                               bool AllowUnexpandedPack) {
+
+  if (CheckTypeConstraint(TypeConstr))
+    return true;
+
+  TemplateName TN = TypeConstr->Template.get();
+  ConceptDecl *CD = cast<ConceptDecl>(TN.getAsTemplateDecl());
 
   DeclarationNameInfo ConceptName(DeclarationName(TypeConstr->Name),
                                   TypeConstr->TemplateNameLoc);
@@ -7967,8 +7979,7 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
 static bool MatchTemplateParameterKind(
     Sema &S, NamedDecl *New, const NamedDecl *NewInstFrom, NamedDecl *Old,
     const NamedDecl *OldInstFrom, bool Complain,
-    Sema::TemplateParameterListEqualKind Kind, SourceLocation TemplateArgLoc,
-    bool PartialOrdering) {
+    Sema::TemplateParameterListEqualKind Kind, SourceLocation TemplateArgLoc) {
   // Check the actual kind (type, non-type, template).
   if (Old->getKind() != New->getKind()) {
     if (Complain) {
@@ -8024,8 +8035,14 @@ static bool MatchTemplateParameterKind(
     // to actually compare the arguments.
     if (Kind != Sema::TPL_TemplateTemplateArgumentMatch ||
         (!OldNTTP->getType()->isDependentType() &&
-         !NewNTTP->getType()->isDependentType()))
-      if (!S.Context.hasSameType(OldNTTP->getType(), NewNTTP->getType())) {
+         !NewNTTP->getType()->isDependentType())) {
+      // C++20 [temp.over.link]p6:
+      //   Two [non-type] template-parameters are equivalent [if] they have
+      //   equivalent types ignoring the use of type-constraints for
+      //   placeholder types
+      QualType OldType = S.Context.getUnconstrainedType(OldNTTP->getType());
+      QualType NewType = S.Context.getUnconstrainedType(NewNTTP->getType());
+      if (!S.Context.hasSameType(OldType, NewType)) {
         if (Complain) {
           unsigned NextDiag = diag::err_template_nontype_parm_different_type;
           if (TemplateArgLoc.isValid()) {
@@ -8043,6 +8060,7 @@ static bool MatchTemplateParameterKind(
 
         return false;
       }
+    }
   }
   // For template template parameters, check the template parameter types.
   // The template parameter lists of template template
@@ -8056,11 +8074,12 @@ static bool MatchTemplateParameterKind(
             (Kind == Sema::TPL_TemplateMatch
                  ? Sema::TPL_TemplateTemplateParmMatch
                  : Kind),
-            TemplateArgLoc, PartialOrdering))
+            TemplateArgLoc))
       return false;
   }
 
-  if (!PartialOrdering && Kind != Sema::TPL_TemplateTemplateArgumentMatch &&
+  if (Kind != Sema::TPL_TemplateParamsEquivalent &&
+      Kind != Sema::TPL_TemplateTemplateArgumentMatch &&
       !isa<TemplateTemplateParmDecl>(Old)) {
     const Expr *NewC = nullptr, *OldC = nullptr;
 
@@ -8153,8 +8172,7 @@ void DiagnoseTemplateParameterListArityMismatch(Sema &S,
 bool Sema::TemplateParameterListsAreEqual(
     const NamedDecl *NewInstFrom, TemplateParameterList *New,
     const NamedDecl *OldInstFrom, TemplateParameterList *Old, bool Complain,
-    TemplateParameterListEqualKind Kind, SourceLocation TemplateArgLoc,
-    bool PartialOrdering) {
+    TemplateParameterListEqualKind Kind, SourceLocation TemplateArgLoc) {
   if (Old->size() != New->size() && Kind != TPL_TemplateTemplateArgumentMatch) {
     if (Complain)
       DiagnoseTemplateParameterListArityMismatch(*this, New, Old, Kind,
@@ -8186,7 +8204,7 @@ bool Sema::TemplateParameterListsAreEqual(
 
       if (!MatchTemplateParameterKind(*this, *NewParm, NewInstFrom, *OldParm,
                                       OldInstFrom, Complain, Kind,
-                                      TemplateArgLoc, PartialOrdering))
+                                      TemplateArgLoc))
         return false;
 
       ++NewParm;
@@ -8203,7 +8221,7 @@ bool Sema::TemplateParameterListsAreEqual(
     for (; NewParm != NewParmEnd; ++NewParm) {
       if (!MatchTemplateParameterKind(*this, *NewParm, NewInstFrom, *OldParm,
                                       OldInstFrom, Complain, Kind,
-                                      TemplateArgLoc, PartialOrdering))
+                                      TemplateArgLoc))
         return false;
     }
   }
@@ -8217,7 +8235,8 @@ bool Sema::TemplateParameterListsAreEqual(
     return false;
   }
 
-  if (!PartialOrdering && Kind != TPL_TemplateTemplateArgumentMatch) {
+  if (Kind != TPL_TemplateTemplateArgumentMatch &&
+      Kind != TPL_TemplateParamsEquivalent) {
     const Expr *NewRC = New->getRequiresClause();
     const Expr *OldRC = Old->getRequiresClause();
 

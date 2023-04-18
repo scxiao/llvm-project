@@ -158,7 +158,7 @@ static LogicalResult genForeachOnSparseConstant(ForeachOp op,
 
   // Foreach on constant.
   foreachInSparseConstant(
-      loc, rewriter, attr, op.getOrder().value_or(AffineMap()),
+      rewriter, loc, attr, op.getOrder().value_or(AffineMap()),
       [&reduc, &rewriter, op](ArrayRef<Value> cvs, Value v) mutable {
         SmallVector<Value> args;
         args.append(cvs.begin(), cvs.end());
@@ -356,16 +356,10 @@ public:
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     Value srcTensor = op.getSrc();
-    auto srcTp = getRankedTensorType(srcTensor);
-    auto dstTp = getRankedTensorType(op.getResult());
-
-    SparseTensorType srcStt(srcTp);
-    SparseTensorType dstStt(dstTp);
-
-    const auto encSrc = srcStt.getEncoding();
-    if (!srcStt.hasEncoding() || !dstStt.hasEncoding()) {
+    const auto srcTp = getSparseTensorType(srcTensor);
+    const auto dstTp = getSparseTensorType(op.getResult());
+    if (!srcTp.hasEncoding() || !dstTp.hasEncoding())
       return failure();
-    }
 
     // Generate code to represent the static dimension constants or compute
     // the dynamic dimension values.
@@ -373,12 +367,12 @@ public:
     sizesForTensor(rewriter, srcSizes, loc, srcTp, srcTensor);
     SmallVector<Value> dstSizes;
     SmallVector<Value> dstDynSizes;
-    if (dstTp.hasStaticShape()) {
-      for (auto d : dstTp.getShape())
+    if (dstTp.hasStaticDimShape()) {
+      for (Dimension d : dstTp.getDimShape())
         dstSizes.push_back(constantIndex(rewriter, loc, d));
     } else {
-      ArrayRef<int64_t> dstShape = dstTp.getShape();
-      genReshapeDstShape(loc, rewriter, dstSizes, srcSizes, dstShape,
+      ArrayRef<DynSize> dstShape = dstTp.getDimShape();
+      genReshapeDstShape(rewriter, loc, dstSizes, srcSizes, dstShape,
                          op.getReassociationIndices());
       for (auto [idx, shape] : llvm::enumerate(dstShape)) {
         if (shape == ShapedType::kDynamic)
@@ -389,8 +383,8 @@ public:
     // Only need a unordered COO buffer if input and output are not sorted
     // in the same way.
     Type bufferTp =
-        srcStt.isAllOrdered() && srcStt.isIdentity() && dstStt.isIdentity()
-            ? dstTp
+        srcTp.isAllOrdered() && srcTp.isIdentity() && dstTp.isIdentity()
+            ? dstTp.getRankedTensorType()
             : getUnorderedCOOFromType(dstTp);
 
     Value buffer =
@@ -406,11 +400,12 @@ public:
     // followed by an optional
     //   %t = sparse_tensor.cast %tmp
     // depending on whether the input/output are sorted in the same way.
+    const auto encSrc = srcTp.getEncoding();
     ForeachOp foreachOp = rewriter.create<ForeachOp>(
         loc, srcTensor, buffer,
         [&](OpBuilder &builder, Location loc, ValueRange srcLcvs, Value v,
             ValueRange reduc) {
-          const Dimension dimRank = srcTp.getRank();
+          const Dimension dimRank = srcTp.getDimRank();
           SmallVector<Value> srcDcvs;
           srcDcvs.reserve(dimRank);
           for (Dimension d = 0; d < dimRank; d++) {
@@ -427,7 +422,8 @@ public:
 
     Value t = rewriter.create<LoadOp>(loc, foreachOp.getResult(0), true);
     if (bufferTp != dstTp) {
-      Value converted = rewriter.create<ConvertOp>(loc, dstTp, t).getResult();
+      auto dstRTT = dstTp.getRankedTensorType();
+      Value converted = rewriter.create<ConvertOp>(loc, dstRTT, t).getResult();
       rewriter.create<DeallocTensorOp>(loc, t);
       t = converted;
     }
@@ -1018,7 +1014,7 @@ public:
       // Link the reduction chain. Note that loop emitter update the reducValue
       // in place.
       loopEmitter.exitCurrentLoop(rewriter, loc, reducValue);
-      loopEmitter.exitCurrentLoopSeq();
+      loopEmitter.exitCurrentLoopSeq(rewriter, loc);
     }
 
     // Replace the foreach operator with the value returned by the outtermost
