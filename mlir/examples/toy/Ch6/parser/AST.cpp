@@ -48,6 +48,8 @@ private:
   void dump(PrintExprAST *node);
   void dump(PrototypeAST *node);
   void dump(FunctionAST *node);
+  void dump(StructLiteralExprAST* node);
+  void dump(StructAST* node);
 
   // Actually print spaces matching the current indentation level
   void indent() {
@@ -145,6 +147,16 @@ void ASTDumper::dump(LiteralExprAST *node) {
   llvm::errs() << " " << loc(node) << "\n";
 }
 
+void ASTDumper::dump(StructLiteralExprAST *node) {
+  INDENT();
+  llvm::errs() << "Struct Literal: ";
+  for (auto& val : node->getValues()) {
+    dump(val.get());
+  }
+  indent();
+  llvm::errs() << " " << loc(node) << "\n";
+}
+
 /// Print a variable reference (just a name).
 void ASTDumper::dump(VariableExprAST *node) {
   INDENT();
@@ -218,12 +230,36 @@ void ASTDumper::dump(FunctionAST *node) {
   dump(node->getBody());
 }
 
+void ASTDumper::dump(StructAST *node) {
+  INDENT();
+  llvm::errs() << "Struct: " << node->getName() << " " << loc(node) << "\n";
+
+  {
+    INDENT();
+    llvm::errs() << "Variables: [\n";
+    for (auto &var : node->getVariables()) {
+      dump(var.get());
+    }
+    indent();
+    llvm::errs() << "]\n";
+  }
+}
+
 /// Print a module, actually loop over the functions and print them in sequence.
 void ASTDumper::dump(ModuleAST *node) {
   INDENT();
   llvm::errs() << "Module:\n";
-  for (auto &f : *node)
-    dump(&f);
+  for (auto &record : *node) {
+    if (FunctionAST *function = llvm::dyn_cast<FunctionAST>(record.get())) {
+      dump(function);
+    }
+    else if (StructAST *str = llvm::dyn_cast<StructAST>(record.get())) {
+      dump(str);
+    }
+    else {
+      llvm::errs() << "<unknow Record, kind " << record->getKind() << ">\n";
+    }
+  }
 }
 
 namespace toy {

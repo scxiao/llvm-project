@@ -35,6 +35,12 @@ def Toy_Dialect : Dialect {
 class Toy_Op<string mnemonic, list<Trait> traits = []> :
     Op<Toy_Dialect, mnemonic, traits>;
 
+def Toy_StructType :
+  DialectType<Toy_Dialect, CPred<"_self.isa<StructType>()">,
+      "Toy Struct type">;
+
+def Toy_Type : AnyTypeOf<[FP64Tensor, Toy_StructType]>;
+
 //===----------------------------------------------------------------------===//
 // Toy Operations
 //===----------------------------------------------------------------------===//
@@ -214,8 +220,9 @@ def GenericCallOp : Toy_Op<"generic_call",
   // callee, and inputs for the call.
   let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<F64Tensor>:$inputs);
 
-  // The generic call operation returns a single value of TensorType.
-  let results = (outs F64Tensor);
+  // The generic call operation returns a single value of TensorType or
+  // StructType
+  let results = (outs Toy_Type);
 
   // Specialize assembly printing and parsing using a declarative format.
   let assemblyFormat = [{
@@ -359,6 +366,56 @@ def ReturnOp : Toy_Op<"return", [Pure, HasParent<"FuncOp">,
 
   // Indicate that additional verification for this operation is necessary.
   let hasVerifier = 1;
+}
+
+// StructAccessOp
+def StructAccessOp : Toy_Op<"struct_access", [Pure]> {
+  let summary = "struct access";
+  let description = [{
+    Access the Nth element of a value returning a struct type.
+  }];
+
+  let arguments = (ins Toy_StructType:$input, I64Attr:$index);
+  let results = (outs Toy_Type:$output);
+
+  let assemblyFormat = [{
+    p$input `[`$index`]` attr-dict `:` type($input) `->` type($output)
+  }];
+
+  // Allow building a StructAccessOp with just a struct value and an index
+  let builders = [
+    OpBuilder<(ins "Value":$input "size_t":$index)>
+  ];
+
+  // Indicate that additional verification for this operation is necessary.
+  let hasVerifier = 1;
+
+  // Set the folder bit so that we can fold constant accesses.
+  let hasFolder = 1;
+}
+
+// StructConstantOp
+def StructConstantOp : Toy_Op<"struct_constant", [ConstantLike, Pure]> {
+  let summary = "struct constant";
+  let description = [{
+    The struct constant is encoded as an array of other constant values, for
+    example:
+
+    ```mlir
+      %0 = toy.struct_constant [
+        dense<[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]> : tensor<2x3xf64>
+      ] : !toy.struct<tensor<*xf64>>
+    ```
+  }];
+
+  let arguments = (ins ArrayAttr:$value);
+  let results = (outs Toy_StructType:$output);
+
+  let assemblyFormat = "$value attr-dict `:` type($output)";
+
+  // Indicate that additonal verification for this operation is necessary
+  let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
