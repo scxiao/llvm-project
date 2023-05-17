@@ -15,6 +15,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
@@ -94,6 +95,7 @@ void ToyDialect::initialize() {
 #include "toy/Ops.cpp.inc"
       >();
   addInterfaces<ToyInlinerInterface>();
+  addTypes<StructType>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -502,6 +504,124 @@ mlir::LogicalResult TransposeOp::verify() {
 //===----------------------------------------------------------------------===//
 // TableGen'd op method definitions
 //===----------------------------------------------------------------------===//
+namespace mlir {
+namespace toy {
+namespace detail {
+
+struct StructTypeStorage : public mlir::TypeStorage {
+  using KeyTy = llvm::ArrayRef<mlir::Type>;
+
+  StructTypeStorage(llvm::ArrayRef<mlir::Type> elementTypes) : 
+      elementTypes(elementTypes) {}
+
+  bool operator == (const KeyTy &key) const {
+    return key == elementTypes;
+  }
+
+  static llvm::hash_code hashKey(const KeyTy &key) {
+    return llvm::hash_value(key);
+  }
+
+  static KeyTy getKey(llvm::ArrayRef<mlir::Type> elementTypes) {
+    return KeyTy(elementTypes);
+  }
+
+  static StructTypeStorage *construct(mlir::TypeStorageAllocator &allocator,
+                                      const KeyTy &key) {
+    llvm::ArrayRef<mlir::Type> elementTypes = allocator.copyInto(key);
+
+    return new (allocator.allocate<StructTypeStorage>())
+        StructTypeStorage(elementTypes);
+  }
+
+  llvm::ArrayRef<mlir::Type> elementTypes;
+};
+
+}
+}
+}
+
+/// Create an instance of a `StructType` with the given element types. There
+/// *must* be at least one element type.
+StructType StructType::get(llvm::ArrayRef<mlir::Type> elementTypes) {
+  assert(!elementTypes.empty() && "expected at least 1 element type");
+
+  // Call into a helper 'get' method in 'TypeBase' to get a uniqued instance
+  // of this type. The first parameter is the context to unique in. The
+  // parameters after the context are forwarded to the storage instance.
+  mlir::MLIRContext *ctx = elementTypes.front().getContext();
+  return Base::get(ctx, elementTypes);
+}
+
+/// Returns the element types of this struct type.
+llvm::ArrayRef<mlir::Type> StructType::getElementTypes() {
+  // 'getImpl' returns a pointer to the internal storage instance.
+  return getImpl()->elementTypes;
+}
+
+/// Parse an instance of a type registered to the toy dialect.
+mlir::Type ToyDialect::parseType(mlir::DialectAsmParser &parser) const {
+  // Parse a struct type in the following form:
+  //   struct-type ::= `struct` `<` type (`,` type)* `>`
+
+  // NOTE: All MLIR parser function return a ParseResult. This is a
+  // specialization of LogicalResult that auto-converts to a `true` boolean
+  // value on failure to allow for chaining, but may be used with explicit
+  // `mlir::failed/mlir::succeeded` as desired.
+
+  // Parse: `struct` `<`
+  if (parser.parseKeyword("struct") || parser.parseLess())
+    return Type();
+
+  // Parse the element types of the struct.
+  SmallVector<mlir::Type, 1> elementTypes;
+  do {
+    // Parse the current element type.
+    SMLoc typeLoc = parser.getCurrentLocation();
+    mlir::Type elementType;
+    if (parser.parseType(elementType))
+      return nullptr;
+
+    // Check that the type is either a TensorType or another StructType.
+    if (!elementType.isa<mlir::TensorType, StructType>()) {
+      parser.emitError(typeLoc, "element type for a struct must either "
+                                "be a TensorType or a StructType, got: ")
+          << elementType;
+      return Type();
+    }
+    elementTypes.push_back(elementType);
+
+    // Parse the optional: `,`
+  } while (succeeded(parser.parseOptionalComma()));
+
+  // Parse: `>`
+  if (parser.parseGreater())
+    return Type();
+  return StructType::get(elementTypes);
+}
+
+/// Print an instance of a type registered to the toy dialect.
+void ToyDialect::printType(mlir::Type type,
+                           mlir::DialectAsmPrinter &printer) const {
+  // Currently the only toy type is a struct type.
+  StructType structType = type.cast<StructType>();
+
+  // Print the struct type according to the parser format.
+  printer << "struct<";
+  llvm::interleaveComma(structType.getElementTypes(), printer);
+  printer << '>';
+}
 
 #define GET_OP_CLASSES
 #include "toy/Ops.cpp.inc"
+
+mlir::Operation *ToyDialect::materializeConstant(mlir::OpBuilder &builder,
+                                                 mlir::Attribute value,
+                                                 mlir::Type type,
+                                                 mlir::Location loc) {
+  if (type.isa<StructType>()) {
+    return builder.create<StructConstantOp>(loc, type, value.cast<mlir::ArrayAttr>());
+  }
+
+  return builder.create<ConstantOp>(loc, type, value.cast<mlir::DenseElementsAttr>());
+}

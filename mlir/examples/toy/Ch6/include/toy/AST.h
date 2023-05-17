@@ -233,16 +233,16 @@ public:
 class PrototypeAST {
   Location location;
   std::string name;
-  std::vector<std::unique_ptr<VariableExprAST>> args;
+  std::vector<std::unique_ptr<VarDeclExprAST>> args;
 
 public:
   PrototypeAST(Location location, const std::string &name,
-               std::vector<std::unique_ptr<VariableExprAST>> args)
+               std::vector<std::unique_ptr<VarDeclExprAST>> args)
       : location(std::move(location)), name(name), args(std::move(args)) {}
 
   const Location &loc() { return location; }
   llvm::StringRef getName() const { return name; }
-  llvm::ArrayRef<std::unique_ptr<VariableExprAST>> getArgs() { return args; }
+  llvm::ArrayRef<std::unique_ptr<VarDeclExprAST>> getArgs() { return args; }
 };
 
 /// This class represent a top level record in a module

@@ -193,8 +193,7 @@ private:
     // Declare all the function arguments in the symbol table.
     for (const auto nameValue :
          llvm::zip(protoArgs, entryBlock.getArguments())) {
-      if (failed(declare(std::get<0>(nameValue)->getName(),
-                         std::get<1>(nameValue))))
+      if (failed(declare(*std::get<0>(nameValue), std::get<1>(nameValue))))
         return nullptr;
     }
 
@@ -221,7 +220,7 @@ private:
       // Otherwise, if this return operation has an operand then add a result to
       // the function.
       function.setType(builder.getFunctionType(
-          function.getFunctionType().getInputs(), getType(VarType{})));
+          function.getFunctionType().getInputs(), *returnOp.operand_type_begin()));
     }
 
     // If this function isn't main, then set the visibility to private.
@@ -236,7 +235,7 @@ private:
   StructAST *getStructFor(ExprAST *expr) {
     llvm::StringRef structName;
     if (auto *decl = llvm::dyn_cast<VariableExprAST>(expr)) {
-      auto varIt = SymbolTable.lookup(decl->getName());
+      auto varIt = symbolTable.lookup(decl->getName());
       if (not varIt.first) {
         return nullptr;
       }
@@ -277,7 +276,24 @@ private:
 
   // Return the numeric member index of the given struct access expression
   std::optional<size_t> getMemberIndex(BinaryExprAST &accessOp) {
-    
+    assert(accessOp.getOp() == '.' and "expected access operation");
+
+    // Lookup the struct node for the LHS
+    StructAST *structAST = getStructFor(accessOp.getLHS());
+    if (not structAST) {
+      return std::nullopt;
+    }
+
+    VariableExprAST *name = llvm::dyn_cast<VariableExprAST>(accessOp.getRHS());
+    if (not name) return std::nullopt;
+
+    auto structVars = structAST->getVariables();
+    const auto *it = llvm::find_if(structVars, [&](auto &var) {
+      return var->getName() == name->getName();
+    });
+    if (it == structVars.end()) return std::nullopt;
+
+    return it - structVars.begin();
   }
 
   /// Emit a binary operation
@@ -318,7 +334,7 @@ private:
   /// expected to have been declared and so should have a value in the symbol
   /// table, otherwise emit an error and return nullptr.
   mlir::Value mlirGen(VariableExprAST &expr) {
-    if (auto variable = symbolTable.lookup(expr.getName()))
+    if (auto variable = symbolTable.lookup(expr.getName()).first)
       return variable;
 
     emitError(loc(expr.loc()), "error: unknown variable '")
@@ -505,20 +521,33 @@ private:
     // We have the initializer value, but in case the variable was declared
     // with specific shape, we emit a "reshape" operation. It will get
     // optimized out later as needed.
-    if (!vardecl.getType().shape.empty()) {
+    VarType varType = vardecl.getType();
+    if (varType.name.empty()) {
+      mlir::Type type = getType(varType, vardecl.loc());
+      if (not type) return nullptr;
+
+      if (type != value.getType()) {
+        emitError(loc(vardecl.loc()))
+            << "struct type of initializer is different than the variable "
+               "declaration. Got "
+            << value.getType() << ", but expected " << type;
+        return nullptr;
+      }
+    }
+    else if (not varType.shape.empty()) {
       value = builder.create<ReshapeOp>(loc(vardecl.loc()),
-                                        getType(vardecl.getType()), value);
+                                        getType(varType.shape), value);
     }
 
     // Register the value in the symbol table.
-    if (failed(declare(vardecl.getName(), value)))
+    if (failed(declare(vardecl, value)))
       return nullptr;
     return value;
   }
 
   /// Codegen a list of expression, return failure if one of them hit an error.
   mlir::LogicalResult mlirGen(ExprASTList &blockAST) {
-    ScopedHashTableScope<StringRef, mlir::Value> varScope(symbolTable);
+    SymbolTableScopeT varScope(symbolTable);
     for (auto &expr : blockAST) {
       // Specific handling for variable declarations, return statement, and
       // print. These can only appear in block list and not in nested
@@ -560,11 +589,11 @@ private:
 
   /// Build an MLIR type from a Toy AST variable type (forward to the generic
   /// getType above).
-  mlir::Type getType(const VarType &type, const Location& loc) { 
+  mlir::Type getType(const VarType &type, const Location& loc1) { 
     if (not type.name.empty()) {
       auto it = structMap.find(type.name);
       if (it == structMap.end()) {
-        emitError(loc(location)) << "error: unknow struct type '" << type.name << "'";
+        emitError(loc(loc1)) << "error: unknow struct type '" << type.name << "'";
         return nullptr;
       }
 

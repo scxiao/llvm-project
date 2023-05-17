@@ -25,6 +25,10 @@ include "toy/ShapeInferenceInterface.td"
 def Toy_Dialect : Dialect {
   let name = "toy";
   let cppNamespace = "::mlir::toy";
+
+  let hasConstantMaterializer = 1;
+
+  let useDefaultTypePrinterParser = 1;
 }
 
 // Base class for toy dialect operations. This operation inherits from the base
@@ -39,7 +43,7 @@ def Toy_StructType :
   DialectType<Toy_Dialect, CPred<"_self.isa<StructType>()">,
       "Toy Struct type">;
 
-def Toy_Type : AnyTypeOf<[FP64Tensor, Toy_StructType]>;
+def Toy_Type : AnyTypeOf<[F64Tensor, Toy_StructType]>;
 
 //===----------------------------------------------------------------------===//
 // Toy Operations
@@ -53,7 +57,9 @@ def Toy_Type : AnyTypeOf<[FP64Tensor, Toy_StructType]>;
 // Here we provide the mnemonic and a list of traits for the operation. The
 // constant operation is marked as 'Pure' as it is a pure operation
 // and may be removed if dead.
-def ConstantOp : Toy_Op<"constant", [Pure]> {
+def ConstantOp : Toy_Op<"constant", 
+    [ConstantLike, Pure,
+     DeclareOpInterfaceMethods<ShapeInferenceOpInterface>]> {
   // Provide a summary and description for this operation. This can be used to
   // auto-generate documentation of the operations within our dialect.
   let summary = "constant";
@@ -218,7 +224,7 @@ def GenericCallOp : Toy_Op<"generic_call",
 
   // The generic call operation takes a symbol reference attribute as the
   // callee, and inputs for the call.
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<F64Tensor>:$inputs);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<Toy_Type>:$inputs);
 
   // The generic call operation returns a single value of TensorType or
   // StructType
@@ -349,7 +355,7 @@ def ReturnOp : Toy_Op<"return", [Pure, HasParent<"FuncOp">,
 
   // The return operation takes an optional input operand to return. This
   // value must match the return type of the enclosing function.
-  let arguments = (ins Variadic<F64Tensor>:$input);
+  let arguments = (ins Variadic<Toy_Type>:$input);
 
   // The return operation only emits the input in the format if it is present.
   let assemblyFormat = "($input^ `:` type($input))? attr-dict ";
@@ -379,12 +385,12 @@ def StructAccessOp : Toy_Op<"struct_access", [Pure]> {
   let results = (outs Toy_Type:$output);
 
   let assemblyFormat = [{
-    p$input `[`$index`]` attr-dict `:` type($input) `->` type($output)
+    $input `[`$index`]` attr-dict `:` type($input) `->` type($output)
   }];
 
   // Allow building a StructAccessOp with just a struct value and an index
   let builders = [
-    OpBuilder<(ins "Value":$input "size_t":$index)>
+    OpBuilder<(ins "Value":$input, "size_t":$index)>
   ];
 
   // Indicate that additional verification for this operation is necessary.
