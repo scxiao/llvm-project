@@ -722,4 +722,13 @@ def ROCDL_TargettAttr :
     }
   }];
 }
+
+def ROCDL_IglpOpt: ROCDL_IntrOp<"iglp.opt", [], [], [], 0>,
+  Arguments<(ins I32Attr:$mask)> {
+  let results = (outs);
+  let assemblyFormat = "$mask attr-dict";
+  string llvmBuilder =
+    "createIntrinsicCall(builder, llvm::Intrinsic::amdgcn_iglp_opt,builder.getInt32(op.getMask()));";
+}
+
 #endif // ROCDLIR_OPS
